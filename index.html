@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced URL Parameter Builder</title>
+    <link rel="icon" href="https://img.icons8.com/color/48/link--v1.png" type="image/png">
+    <link rel="apple-touch-icon" href="https://img.icons8.com/color/48/link--v1.png">
+    <style>
+        :root { --primary: #0078d4; --bg: #f3f2f1; --card: #ffffff; --text: #323130; --border: #edebe9; --danger: #d13438; }
+        body { font-family: 'Segoe UI', Meiryo, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: 20px; }
+        .card { background: var(--card); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h2 { margin-top: 0; font-size: 1.2rem; color: var(--primary); border-bottom: 2px solid var(--border); padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center;}
+        label { display: block; font-weight: bold; margin: 10px 0 5px; font-size: 0.9rem; }
+        textarea, input[type="text"], input[type="password"] { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid var(--border); border-radius: 4px; font-family: monospace; }
+        textarea { height: 120px; resize: vertical; }
+        .button-group { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
+        button { background: var(--primary); color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        button:hover { opacity: 0.9; }
+        button.danger { background: var(--danger); }
+        button.secondary { background: #107c41; }
+        button.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+        
+        .param-group { background: var(--bg); padding: 15px; border-radius: 6px; margin-bottom: 15px; border: 1px solid var(--border); }
+        .param-name { font-weight: bold; margin-bottom: 10px; color: #333; }
+        .param-options { display: flex; flex-wrap: wrap; gap: 10px; }
+        .param-option-btn { background: white; color: var(--text); border: 1px solid #ccc; padding: 6px 12px; border-radius: 20px; cursor: pointer; font-size: 0.9rem; }
+        .param-option-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+        
+        #finalUrlBox { background: #201f1e; color: #00ff00; padding: 15px; border-radius: 4px; font-family: monospace; word-break: break-all; margin-bottom: 15px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid var(--border); padding: 8px; text-align: left; }
+        th { background: var(--bg); }
+        .action-btns button { padding: 4px 8px; font-size: 0.8rem; margin-right: 5px; }
+
+        .github-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #f9f9f9; padding: 15px; border-radius: 6px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="card">
+            <h2>1. 解析する情報の設定 <button class="ghost" onclick="app.clearInputs()">入力クリア</button></h2>
+            <label>対象ページのベースURL</label>
+            <input type="text" id="baseUrlInput" placeholder="URLを入力（パラメータが付いていても自動で除去されます）">
+
+            <label>ページのHTMLソースコード</label>
+            <textarea id="htmlSourceInput" placeholder="HTMLソースを貼り付けてください..."></textarea>
+            
+            <div class="button-group">
+                <button onclick="app.analyzeSource()">HTMLを解析する</button>
+            </div>
+            <p style="font-size: 0.8rem; color: #666; margin-top: 10px;">
+                ※解析漏れがある場合、Ctrl+Uのソースではなく、F12キーの「Elements」タブからHTML全体をコピーして貼り付けてみてください。
+            </p>
+        </div>
+
+        <div class="card" id="builderSection" style="display: none;">
+            <h2>2. パラメータの選択</h2>
+            <div id="dynamicControls"></div>
+        </div>
+
+        <div class="card" id="resultSection" style="display: none;">
+            <h2>3. 生成されたURL</h2>
+            <div id="finalUrlBox">ここにURLが表示されます</div>
+            <div class="button-group">
+                <button onclick="app.copyUrl()">コピーする</button>
+                <button class="ghost" onclick="app.openUrl()">このURLを開く</button>
+            </div>
+            <hr style="border: 0; border-top: 1px solid #edebe9; margin: 20px 0;">
+            <label>このURLをプリセットとして保存</label>
+            <div style="display: flex; gap: 10px;">
+                <input type="text" id="presetNameInput" placeholder="例: 近畿地方・警報一覧" style="flex: 1;">
+                <button class="secondary" onclick="app.savePreset()">保存する</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>4. 保存済みプリセット & バックアップ</h2>
+            <div style="overflow-x: auto;">
+                <table id="presetTable">
+                    <thead><tr><th>名前</th><th>URL</th><th>操作</th></tr></thead>
+                    <tbody id="presetTableBody"></tbody>
+                </table>
+            </div>
+
+            <h3 style="font-size: 1rem; margin-top: 20px;">GitHub JSON バックアップ同期</h3>
+            <div class="github-settings">
+                <div>
+                    <label>GitHub PAT (Token)</label>
+                    <input type="password" id="ghToken" placeholder="ghp_...">
+                </div>
+                <div>
+                    <label>Owner / Repo</label>
+                    <input type="text" id="ghRepo" placeholder="username/repository">
+                </div>
+                <div>
+                    <label>File Path</label>
+                    <input type="text" id="ghPath" placeholder="data/presets.json">
+                </div>
+                <div style="display: flex; align-items: flex-end; gap: 10px;">
+                    <button onclick="app.syncToGitHub()" style="width: 100%;">GitHubへPush (上書き)</button>
+                    <button class="ghost" onclick="app.pullFromGitHub()" style="width: 100%;">GitHubからPull</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class App {
+            constructor() {
+                this.extractedParams = {};
+                this.selectedValues = {};
+                this.presets = JSON.parse(localStorage.getItem('urlPresets')) || [];
+                this.loadGitHubSettings();
+                this.renderPresets();
+            }
+
+            // 1. 入力クリア
+            clearInputs() {
+                document.getElementById('baseUrlInput').value = '';
+                document.getElementById('htmlSourceInput').value = '';
+                document.getElementById('builderSection').style.display = 'none';
+                document.getElementById('resultSection').style.display = 'none';
+                this.extractedParams = {};
+                this.selectedValues = {};
+            }
+
+            // 2. 解析処理（強化版）
+            analyzeSource() {
+                const sourceHtml = document.getElementById('htmlSourceInput').value;
+                if (!sourceHtml.trim()) { alert('HTMLソースコードを入力してください。'); return; }
+
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(sourceHtml, 'text/html');
+
+                this.extractedParams = {};
+                this.selectedValues = {};
+
+                // 強化: select は name だけでなく id も見る
+                doc.querySelectorAll('select').forEach(select => {
+                    const name = select.getAttribute('name') || select.getAttribute('id');
+                    if (!name) return; // nameもidも無い場合はスキップ
+
+                    const options = [];
+                    select.querySelectorAll('option').forEach(opt => {
+                        const val = opt.getAttribute('value');
+                        if (val !== null && val !== "") {
+                            options.push({ value: val, label: opt.textContent.trim() || val });
+                        }
+                    });
+                    if (options.length > 0) this.extractedParams[name] = options;
+                });
+
+                // 強化: input 全般 (radio, checkbox, hidden) も id をフォールバックに
+                doc.querySelectorAll('input').forEach(input => {
+                    const type = input.getAttribute('type')?.toLowerCase();
+                    if (type === 'radio' || type === 'checkbox' || type === 'hidden') {
+                        const name = input.getAttribute('name') || input.getAttribute('id');
+                        const val = input.getAttribute('value');
+                        if (!name || val === null || val === "") return;
+
+                        let label = val;
+                        if (input.nextSibling && input.nextSibling.nodeType === 3 && input.nextSibling.textContent.trim() !== '') {
+                            label = input.nextSibling.textContent.trim();
+                        } else if (input.id) { // labelタグのチェック
+                            const labelEl = doc.querySelector(`label[for="${input.id}"]`);
+                            if(labelEl) label = labelEl.textContent.trim();
+                        }
+
+                        if (!this.extractedParams[name]) this.extractedParams[name] = [];
+                        if (!this.extractedParams[name].some(opt => opt.value === val)) {
+                            this.extractedParams[name].push({ value: val, label: label });
+                        }
+                    }
+                });
+
+                this.renderBuilderUI();
+            }
+
+            renderBuilderUI() {
+                const container = document.getElementById('dynamicControls');
+                container.innerHTML = '';
+                const paramNames = Object.keys(this.extractedParams);
+                
+                if (paramNames.length === 0) {
+                    container.innerHTML = '<p style="color: var(--danger);">パラメータ要素が見つかりませんでした。Elementsタブからのコピーを試してください。</p>';
+                } else {
+                    paramNames.forEach(name => {
+                        const groupDiv = document.createElement('div');
+                        groupDiv.className = 'param-group';
+                        groupDiv.innerHTML = `<div class="param-name">パラメータ: ${name}</div>`;
+                        
+                        const optionsDiv = document.createElement('div');
+                        optionsDiv.className = 'param-options';
+
+                        const clearBtn = document.createElement('button');
+                        clearBtn.className = 'param-option-btn active';
+                        clearBtn.textContent = '指定なし';
+                        clearBtn.onclick = () => this.selectParam(name, null, optionsDiv);
+                        optionsDiv.appendChild(clearBtn);
+
+                        this.extractedParams[name].forEach(opt => {
+                            const btn = document.createElement('button');
+                            btn.className = 'param-option-btn';
+                            btn.textContent = (opt.label === opt.value) ? opt.value : `${opt.label} (${opt.value})`;
+                            btn.onclick = () => this.selectParam(name, opt.value, optionsDiv, btn);
+                            optionsDiv.appendChild(btn);
+                        });
+
+                        groupDiv.appendChild(optionsDiv);
+                        container.appendChild(groupDiv);
+                    });
+                }
+                document.getElementById('builderSection').style.display = 'block';
+                document.getElementById('resultSection').style.display = 'block';
+                this.updateFinalUrl();
+            }
+
+            selectParam(name, value, container, clickedBtn = null) {
+                const buttons = container.querySelectorAll('.param-option-btn');
+                buttons.forEach(btn => btn.classList.remove('active'));
+                if (clickedBtn) clickedBtn.classList.add('active');
+                else buttons[0].classList.add('active');
+
+                if (value === null) delete this.selectedValues[name];
+                else this.selectedValues[name] = value;
+
+                this.updateFinalUrl();
+            }
+
+            // 3. 既存パラメータの除去とURL構築
+            updateFinalUrl() {
+                let rawUrl = document.getElementById('baseUrlInput').value.trim();
+                if (!rawUrl) rawUrl = 'http://example.com/page.html';
+                
+                // ? や # で分割してベースURLのみを抽出（既存パラメータの除去）
+                const baseUrl = rawUrl.split('?')[0].split('#')[0];
+                
+                const queryParams = new URLSearchParams(this.selectedValues).toString();
+                const finalUrl = queryParams ? `${baseUrl}?${queryParams}` : baseUrl;
+                
+                document.getElementById('finalUrlBox').textContent = finalUrl;
+            }
+
+            copyUrl() {
+                navigator.clipboard.writeText(document.getElementById('finalUrlBox').textContent);
+            }
+
+            openUrl() {
+                window.open(document.getElementById('finalUrlBox').textContent, '_blank');
+            }
+
+            // 4. プリセット機能
+            savePreset() {
+                const name = document.getElementById('presetNameInput').value.trim();
+                const url = document.getElementById('finalUrlBox').textContent;
+                if (!name) { alert('プリセット名を入力してください。'); return; }
+
+                // 既存の同名プリセットがあれば上書き
+                const existingIndex = this.presets.findIndex(p => p.name === name);
+                if (existingIndex >= 0) {
+                    this.presets[existingIndex].url = url;
+                } else {
+                    this.presets.push({ id: Date.now(), name, url });
+                }
+                
+                this.savePresetsToLocal();
+                document.getElementById('presetNameInput').value = '';
+                alert('保存しました！');
+            }
+
+            deletePreset(id) {
+                if(confirm('本当に削除しますか？')) {
+                    this.presets = this.presets.filter(p => p.id !== id);
+                    this.savePresetsToLocal();
+                }
+            }
+
+            loadPreset(url) {
+                window.open(url, '_blank');
+            }
+
+            savePresetsToLocal() {
+                localStorage.setItem('urlPresets', JSON.stringify(this.presets));
+                this.renderPresets();
+            }
+
+            renderPresets() {
+                const tbody = document.getElementById('presetTableBody');
+                tbody.innerHTML = '';
+                this.presets.forEach(p => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${p.name}</td>
+                        <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${p.url}</td>
+                        <td class="action-btns">
+                            <button class="secondary" onclick="app.loadPreset('${p.url}')">開く</button>
+                            <button class="danger" onclick="app.deletePreset(${p.id})">削除</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+
+            // 5. GitHub 連携機能
+            loadGitHubSettings() {
+                document.getElementById('ghToken').value = localStorage.getItem('ghToken') || '';
+                document.getElementById('ghRepo').value = localStorage.getItem('ghRepo') || '';
+                document.getElementById('ghPath').value = localStorage.getItem('ghPath') || '';
+            }
+
+            saveGitHubSettings() {
+                localStorage.setItem('ghToken', document.getElementById('ghToken').value);
+                localStorage.setItem('ghRepo', document.getElementById('ghRepo').value);
+                localStorage.setItem('ghPath', document.getElementById('ghPath').value);
+            }
+
+            async getGitHubFileSha(token, repo, path) {
+                const res = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, {
+                    headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' }
+                });
+                if (res.status === 404) return null; // ファイルがまだ存在しない場合
+                if (!res.ok) throw new Error('ファイルの取得に失敗しました');
+                const data = await res.json();
+                return data.sha;
+            }
+
+            async syncToGitHub() {
+                this.saveGitHubSettings();
+                const token = document.getElementById('ghToken').value;
+                const repo = document.getElementById('ghRepo').value;
+                const path = document.getElementById('ghPath').value;
+                
+                if(!token || !repo || !path) { alert('GitHubの設定をすべて入力してください。'); return; }
+
+                try {
+                    const sha = await this.getGitHubFileSha(token, repo, path);
+                    
+                    // UTF-8文字列をBase64にエンコード
+                    const contentStr = JSON.stringify(this.presets, null, 2);
+                    const base64Content = btoa(unescape(encodeURIComponent(contentStr)));
+
+                    const res = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' },
+                        body: JSON.stringify({
+                            message: 'Update URL presets via App',
+                            content: base64Content,
+                            sha: sha // 既存ファイルがある場合は必須
+                        })
+                    });
+
+                    if (res.ok) alert('GitHubへのバックアップが完了しました！');
+                    else throw new Error('Pushに失敗しました');
+                } catch (e) {
+                    console.error(e);
+                    alert('エラーが発生しました: ' + e.message);
+                }
+            }
+
+            async pullFromGitHub() {
+                this.saveGitHubSettings();
+                const token = document.getElementById('ghToken').value;
+                const repo = document.getElementById('ghRepo').value;
+                const path = document.getElementById('ghPath').value;
+                
+                if(!token || !repo || !path) { alert('GitHubの設定をすべて入力してください。'); return; }
+
+                try {
+                    const res = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, {
+                        headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' }
+                    });
+                    
+                    if (!res.ok) throw new Error('ファイルの取得に失敗しました。パスが正しいか確認してください。');
+                    
+                    const data = await res.json();
+                    // Base64からデコード
+                    const contentStr = decodeURIComponent(escape(atob(data.content)));
+                    const pulledData = JSON.parse(contentStr);
+                    
+                    if(Array.isArray(pulledData)) {
+                        this.presets = pulledData;
+                        this.savePresetsToLocal();
+                        alert('GitHubからの読み込みが完了しました！');
+                    } else {
+                        alert('JSONの形式が正しくありません。');
+                    }
+                } catch (e) {
+                    console.error(e);
+                    alert('エラーが発生しました: ' + e.message);
+                }
+            }
+        }
+
+        const app = new App();
+    </script>
+</body>
+</html>
